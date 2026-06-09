@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Routenplaner</title>
+
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+        <link rel="stylesheet" href="/css/style.css">
+    </head>
+
+    <body>
+        <div id="panel">
+            <h1>Routenplaner</h1>
+
+            <!-- Start und Ende -->
+            <div class="waypoint-row">
+                <span class="marker-dot start-dot"></span>
+                <input type="text" id="input-start" placeholder="Start" />
+                <button id="btn-place-start" class="btn-icon" title="Auf Karte setzen">&#9678;</button>
+            </div>
+            <div class="waypoint-row">
+                <span class="marker-dot end-dot"></span>
+                <input type="text" id="input-end" placeholder="Ziel" />
+                <button id="btn-place-end" class="btn-icon" title="Auf Karte setzen">&#9678;</button>
+            </div>
+
+            <!-- Informationen -->
+            <div id="route-info" class="route-info hidden">
+                <span class="stat-value" id="distance-value">—</span>
+                <span class="stat-label">Distanz</span>
+            </div>
+
+            <div class="actions">
+                <button id="btn-route" disabled>Route berechnen</button>
+                <button id="btn-clear" class="secondary">Zurücksetzen</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- POI-Suche -->
+            <div class="section-title">POIs anzeigen</div>
+
+            <div class="field-row">
+                <label>Kategorie</label>
+                <select id="poi-category">
+                    <option value="">Alle</option>
+                    <option value="amenity">amenity</option>
+                    <option value="shop">shop</option>
+                    <option value="tourism">tourism</option>
+                    <option value="leisure">leisure</option>
+                    <option value="healthcare">healthcare</option>
+                    <option value="historic">historic</option>
+                    <option value="office">office</option>
+                    <option value="craft">craft</option>
+                </select>
+            </div>
+            <div class="field-row">
+                <label>Typ</label>
+                <input type="text" id="poi-type" placeholder="z.B. fuel, bakery,..." />
+            </div>
+            <div class="field-row">
+                <label>Radius</label>
+                <div class="input-unit">
+                    <input type="number" id="poi-radius" value="1000" min="100" max="50000" step="100" />
+                    <span class="unit">m</span>
+                </div>
+            </div>
+            <div class="field-row">
+                <label>Zentrum</label>
+                <select id="poi-center">
+                    <option value="map">Kartenmitte</option>
+                    <option value="start">Startpunkt</option>
+                    <option value="end">Zielpunkt</option>
+                </select>
+            </div>
+
+            <div class="actions">
+                <button id="btn-load-pois">Anzeigen</button>
+                <button id="btn-clear-pois" class="secondary">Entfernen</button>
+            </div>
+            <div id="poi-status" class="poi-status"></div>
+        </div>
+
+        <div id="map"></div>
+
+        <script src="/js/map.js"></script>
+        <script src="/js/routing.js"></script>
+        <script src="/js/pois.js"></script>
+    </body>
+</html>
