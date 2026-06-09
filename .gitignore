@@ -1,0 +1,16 @@
+# Build
+build/
+cmake-build-*/
+compile_commands.json
+
+# Data
+data/*.osm.pbf
+data/*.osm
+
+# IDE
+.vscode/
+*~
+
+# OS
+.DS_Store
+Thumbs.db
