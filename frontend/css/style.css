@@ -118,7 +118,7 @@ body {
 /* Button Icon */
 .btn-icon {
     flex-shrink: 0;
-    width: 30px;
+    width: 10px;
     height: 30px;
     padding: 0;
     border: 1.5px solid #e5e7eb;
@@ -253,11 +253,11 @@ button.secondary:hover { background: #e5e7eb; }
 }
 
 #btn-load-pois {
-    background: #7c3aed;
+    background: #2563eb;
     color: white;
 }
 
-#btn-load-pois:hover { background: #6d28d9; }
+#btn-load-pois:hover { background: #2563eb; }
 
 .poi-status {
     font-size: 12px;
