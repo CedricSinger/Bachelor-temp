@@ -2,6 +2,7 @@
 
 #include "router.hpp"
 #include "poi.hpp"
+#include "spatial_index.hpp"
 #include <string>
 #include <cstdint>
 
@@ -21,6 +22,9 @@ namespace routenplaner {
         std::string doc_root_;
         const Router& router_;
         const POICollection& pois_;
+        LinearIndex        linear_idx_;
+        GridIndex          grid_idx_;
+        RTreeIndex         rtree_idx_;
     };
     
 }

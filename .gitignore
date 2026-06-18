@@ -6,6 +6,15 @@ compile_commands.json
 # Data
 data/*.osm.pbf
 data/*.osm
+poi_stats.txt
+
+# Testergebnisse / generierte Reports
+comparison_report.html
+bench_local.json
+bench_local.html
+tag_histogram*.html
+tag_histogram*.txt
+poi_histogram.html
 
 # IDE
 .vscode/

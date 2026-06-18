@@ -25,8 +25,8 @@ function radiusToBbox(center, radiusM) {
 }
 
 async function loadPOIs() {
-    const category = document.getElementById('poi-category').value;
-    const type     = document.getElementById('poi-type').value.trim();
+    const key      = document.getElementById('poi-key').value.trim();
+    const value    = document.getElementById('poi-value').value.trim();
     const radius   = parseFloat(document.getElementById('poi-radius').value) || 1000;
     const centerSel = document.getElementById('poi-center').value;
     const status   = document.getElementById('poi-status');
@@ -47,8 +47,9 @@ async function loadPOIs() {
     // Marker laden
     const { latMin, lngMin, latMax, lngMax } = radiusToBbox(center, radius);
     let url = `/pois?bbox=${latMin},${lngMin},${latMax},${lngMax}`;
-    if (category) url += `&category=${encodeURIComponent(category)}`;
-    if (type)     url += `&type=${encodeURIComponent(type)}`;
+    if (key && value) {
+        url += `&key=${encodeURIComponent(key)}&value=${encodeURIComponent(value)}`;
+    }
 
     try {
         const res  = await fetch(url);
@@ -68,11 +69,13 @@ async function loadPOIs() {
                 });
             },
             onEachFeature(feature, layer) {
-                const p = feature.properties;
-                const label = p.name || p.type;
-                layer.bindPopup(
-                    `<b>${label}</b><br><span style="color:#6b7280">${p.category} · ${p.type}</span>`
-                );
+                const tags = feature.properties.tags || {};
+                const label = tags.name || tags.amenity || tags.shop
+                    || Object.values(tags)[0] || 'POI';
+                const rows = Object.entries(tags)
+                    .map(([k, v]) => `<span style="color:#6b7280">${k}</span> = ${v}`)
+                    .join('<br>');
+                layer.bindPopup(`<b>${label}</b><br>${rows}`);
             }
         }).addTo(map);
 

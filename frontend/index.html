@@ -44,22 +44,12 @@
             <div class="section-title">POIs anzeigen</div>
 
             <div class="field-row">
-                <label>Kategorie</label>
-                <select id="poi-category">
-                    <option value="">Alle</option>
-                    <option value="amenity">amenity</option>
-                    <option value="shop">shop</option>
-                    <option value="tourism">tourism</option>
-                    <option value="leisure">leisure</option>
-                    <option value="healthcare">healthcare</option>
-                    <option value="historic">historic</option>
-                    <option value="office">office</option>
-                    <option value="craft">craft</option>
-                </select>
+                <label>Key</label>
+                <input type="text" id="poi-key" placeholder="z.B. amenity, shop,..." />
             </div>
             <div class="field-row">
-                <label>Typ</label>
-                <input type="text" id="poi-type" placeholder="z.B. fuel, bakery,..." />
+                <label>Wert</label>
+                <input type="text" id="poi-value" placeholder="z.B. restaurant, bakery,..." />
             </div>
             <div class="field-row">
                 <label>Radius</label>
@@ -82,6 +72,38 @@
                 <button id="btn-clear-pois" class="secondary">Entfernen</button>
             </div>
             <div id="poi-status" class="poi-status"></div>
+
+            <div class="divider"></div>
+            <div class="section-title">Index-Benchmark</div>
+            <div class="field-row">
+                <label>Key</label>
+                <input type="text" id="bench-key" placeholder="leer = alle" />
+            </div>
+            <div class="field-row">
+                <label>Wert</label>
+                <input type="text" id="bench-value" placeholder="z.B. restaurant" />
+            </div>
+            <div class="field-row">
+                <label>Abfragen</label>
+                <input type="number" id="bench-n" value="50" min="10" max="500" step="10" />
+            </div>
+            <div class="field-row">
+                <label>Radius</label>
+                <div class="input-unit">
+                    <input type="number" id="bench-radius" value="1000" min="100" max="50000" step="100" />
+                    <span class="unit">m</span>
+                </div>
+            </div>
+            <div class="actions">
+                <button id="btn-place-bench" class="secondary">Punkt wählen</button>
+                <button onclick="benchPreset('urban')" class="secondary">Stuttgart</button>
+                <button onclick="benchPreset('rural')" class="secondary">Schwarzwald</button>
+            </div>
+            <div class="actions">
+                <button onclick="runBenchmark()">Test starten</button>
+            </div>
+            <div id="bench-status" class="poi-status"></div>
+            <div id="bench-results"></div>
         </div>
 
         <div id="map"></div>
@@ -89,5 +111,6 @@
         <script src="/js/map.js"></script>
         <script src="/js/routing.js"></script>
         <script src="/js/pois.js"></script>
+        <script src="/js/benchmark.js"></script>
     </body>
 </html>

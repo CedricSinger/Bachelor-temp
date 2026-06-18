@@ -1,4 +1,5 @@
 #include "server.hpp"
+#include "spatial_index.hpp"
 
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -64,6 +65,9 @@ namespace routenplaner {
         const std::string& root,
         const Router& router,
         const POICollection& pois,
+        const LinearIndex& linear_idx_,
+        const GridIndex& grid_idx_,
+        const RTreeIndex& rtree_idx_,
         http::request<Body, http::basic_fields<Allocator>>&& req)
     {
         // Response-Struktur
@@ -173,8 +177,18 @@ namespace routenplaner {
                 ? parse_query(target.substr(qpos + 1))
                 : std::unordered_map<std::string, std::string>{};
 
-            std::string category = params.count("category") ? params["category"] : "";
-            std::string type     = params.count("type")     ? params["type"]     : "";
+            std::string key   = params.count("key")   ? params["key"]   : "";
+            std::string value = params.count("value") ? params["value"] : "";
+
+            // key=value -> Tag-Filter (IDs). Unbekannter Key/Wert -> keine Treffer.
+            TagFilter filter;
+            bool impossible = false;
+            if (!key.empty() && !value.empty()) {
+                uint32_t kid = pois.dict().id_of(key);
+                uint32_t vid = pois.dict().id_of(value);
+                if (kid == TagDict::INVALID || vid == TagDict::INVALID) impossible = true;
+                else filter.push_back({kid, vid});
+            }
 
             std::vector<const POI*> results;
 
@@ -191,7 +205,7 @@ namespace routenplaner {
                             std::stod(s.substr(p2 + 1, p3 - p2 - 1)),
                             std::stod(s.substr(p3 + 1)));
                     }();
-                    results = pois.query_bbox(a, b, c, d, category, type);
+                    if (!impossible) results = pois.query_bbox(a, b, c, d, filter);
                 } catch (...) {
                     return make_response(http::status::bad_request,
                         R"({"error":"Invalid bbox"})");
@@ -201,6 +215,7 @@ namespace routenplaner {
                     R"({"error":"bbox required"})");
             }
 
+            const TagDict& dict = pois.dict();
             json fc;
             fc["type"] = "FeatureCollection";
             fc["features"] = json::array();
@@ -209,13 +224,86 @@ namespace routenplaner {
                 f["type"] = "Feature";
                 f["geometry"]["type"] = "Point";
                 f["geometry"]["coordinates"] = {poi->coords.lng, poi->coords.lat};
-                f["properties"]["id"]       = poi->id;
-                f["properties"]["category"] = poi->category;
-                f["properties"]["type"]     = poi->type;
-                f["properties"]["name"]     = poi->name;
+                f["properties"]["id"] = poi->id;
+                json tagsj = json::object();
+                for (const auto& [k, v] : poi->tags)
+                    tagsj[dict.str(k)] = dict.str(v);
+                f["properties"]["tags"] = std::move(tagsj);
                 fc["features"].push_back(f);
             }
             return make_response(http::status::ok, fc.dump());
+        }
+
+        if (target.rfind("/benchmark", 0) == 0) {
+            auto qpos = target.find('?');
+            auto params = (qpos != std::string::npos)
+                ? parse_query(target.substr(qpos + 1))
+                : std::unordered_map<std::string, std::string>{};
+
+            try {
+                double center_lat = std::stod(params.count("lat") ? params["lat"] : "48.775");
+                double center_lng = std::stod(params.count("lng") ? params["lng"] : "9.182");
+                double radius_m   = std::stod(params.count("radius") ? params["radius"] : "1000");
+                int    n_queries  = std::stoi(params.count("n") ? params["n"] : "50");
+                n_queries = std::max(1, std::min(500, n_queries));
+
+                std::string key   = params.count("key")   ? params["key"]   : "";
+                std::string value = params.count("value") ? params["value"] : "";
+
+                TagFilter filter;
+                if (!key.empty() && !value.empty()) {
+                    uint32_t kid = pois.dict().id_of(key);
+                    uint32_t vid = pois.dict().id_of(value);
+                    if (kid != TagDict::INVALID && vid != TagDict::INVALID)
+                        filter.push_back({kid, vid});
+                }
+
+                auto bench = run_benchmark(
+                    linear_idx_, grid_idx_, rtree_idx_,
+                    center_lat, center_lng, radius_m, n_queries, filter);
+
+                // Gesamtzahlen aus dem Datensatz ergänzen
+                bench.total_pois = pois.size();
+                if (!filter.empty()) {
+                    for (const auto& poi : pois.all())
+                        if (poi_matches(poi, filter)) ++bench.filter_pois;
+                }
+
+                json res;
+                res["n_queries"]     = bench.n_queries;
+                res["center_lat"]    = bench.center_lat;
+                res["center_lng"]    = bench.center_lng;
+                res["radius_m"]      = bench.radius_m;
+                res["avg_found"]     = bench.avg_found;
+                res["total_pois"]    = bench.total_pois;
+                res["filter_pois"]   = bench.filter_pois;
+                res["timings"]       = json::object();
+                for (const auto& [name, t] : bench.timings) {
+                    res["timings"][name] = {
+                        {"avg_ms",   t.avg_ms},
+                        {"min_ms",   t.min_ms},
+                        {"max_ms",   t.max_ms},
+                        {"total_ms", t.total_ms}
+                    };
+                }
+                return make_response(http::status::ok, res.dump());
+
+            } catch (const std::exception& e) {
+                json err;
+                err["error"] = std::string("Invalid parameters: ") + e.what();
+                return make_response(http::status::bad_request, err.dump());
+            }
+        }
+
+        if (target == "/stats") {
+            auto key_stats = pois.key_stats();
+            json result;
+            result["total"] = pois.size();
+            result["keys"] = json::object();
+            for (const auto& [key, count] : key_stats) {
+                result["keys"][key] = count;
+            }
+            return make_response(http::status::ok, result.dump());
         }
 
         if (target == "/info") {
@@ -248,7 +336,9 @@ namespace routenplaner {
 
 
     static void session(tcp::socket socket, const std::string& root,
-                        const Router& router, const POICollection& pois) {
+                        const Router& router, const POICollection& pois,
+                        const LinearIndex& linear_idx, const GridIndex& grid_idx,
+                        const RTreeIndex& rtree_idx) {
         beast::error_code ec;
         beast::flat_buffer buffer;
 
@@ -262,7 +352,8 @@ namespace routenplaner {
                 break;
             }
 
-            auto response = handle_request(root, router, pois, std::move(req));
+            auto response = handle_request(root, router, pois,
+                linear_idx, grid_idx, rtree_idx, std::move(req));
             http::write(socket, response, ec);
 
             if (ec) {
@@ -280,7 +371,15 @@ namespace routenplaner {
     Server::Server(const std::string& address, uint16_t port,
                 const std::string& root, const Router& router,
                 const POICollection& pois)
-        : address_(address), port_(port), doc_root_(root), router_(router), pois_(pois) {}
+        : address_(address), port_(port), doc_root_(root), router_(router), pois_(pois),
+          linear_idx_(pois.all()),
+          grid_idx_(pois.all()),
+          rtree_idx_(pois.all())
+    {
+        std::cout << "Spatial indices built (grid: "
+                  << grid_idx_.cells_per_side() << "x" << grid_idx_.cells_per_side()
+                  << ")" << std::endl;
+    }
 
     void Server::run() {
         net::io_context ioc{1};
@@ -296,8 +395,10 @@ namespace routenplaner {
             acceptor.accept(socket);
 
             std::thread([s = std::move(socket), &root = doc_root_,
-                        &router = router_, &pois = pois_]() mutable {
-                session(std::move(s), root, router, pois);
+                        &router = router_, &pois = pois_,
+                        &linear = linear_idx_, &grid = grid_idx_,
+                        &rtree = rtree_idx_]() mutable {
+                session(std::move(s), root, router, pois, linear, grid, rtree);
             }).detach();
         }
     }

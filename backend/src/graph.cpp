@@ -91,10 +91,6 @@ namespace routenplaner {
         "secondary_link", "tertiary_link"
     };
 
-    const std::vector<std::string> POI_KEYS = {
-        "amenity", "shop", "tourism", "leisure", "healthcare", "historic", "office", "craft"
-    };
-
     class OSMHandler : public osmium::handler::Handler {
         public:
             OSMHandler(Graph& graph, POICollection& pois) : graph_(graph), pois_(pois) {}
@@ -102,20 +98,17 @@ namespace routenplaner {
             void node(const osmium::Node& node) {
                 if (!node.location().valid()) return;
 
-                for (const auto& key : POI_KEYS) {
-                    const char* value = node.tags()[key.c_str()];
-                    if (value) {
-                        POI poi;
-                        poi.id       = static_cast<uint64_t>(node.id());
-                        poi.coords   = {node.location().lat(), node.location().lon()};
-                        poi.category = key;
-                        poi.type     = value;
-                        const char* name = node.tags()["name"];
-                        poi.name     = name ? name : "";
-                        pois_.add(std::move(poi));
-                        break;
-                    }
-                }
+                const auto& tags = node.tags();
+                if (tags.empty()) return;   // jeder getaggte Knoten ist ein POI
+
+                POI poi;
+                poi.id     = static_cast<uint64_t>(node.id());
+                poi.coords = {node.location().lat(), node.location().lon()};
+                TagDict& dict = pois_.dict();
+                poi.tags.reserve(tags.size());
+                for (const auto& tag : tags)
+                    poi.tags.emplace_back(dict.intern(tag.key()), dict.intern(tag.value()));
+                pois_.add(std::move(poi));
             }
 
             void way(const osmium::Way& way) {

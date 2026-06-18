@@ -41,6 +41,8 @@ function setPlacingMode(mode) {
     mapEl.classList.toggle('placing-mode', mode !== null);
     document.getElementById('btn-place-start').classList.toggle('active', mode === 'start');
     document.getElementById('btn-place-end').classList.toggle('active', mode === 'end');
+    const benchBtn = document.getElementById('btn-place-bench');
+    if (benchBtn) benchBtn.classList.toggle('active', mode === 'bench');
 }
 
 function setStartMarker(latlng) {
@@ -95,6 +97,39 @@ function clearRoute() {
 }
 
 
+// Benchmark-Punkt + Radius-Kreis
+let benchMarker = null;
+let benchCircle = null;
+const benchIcon = createIcon('#eab308');
+
+function setBenchMarker(latlng) {
+    if (benchMarker) map.removeLayer(benchMarker);
+    benchMarker = L.marker(latlng, { icon: benchIcon, draggable: true }).addTo(map);
+    benchMarker.on('drag', updateBenchCircle);
+    updateBenchCircle();
+}
+
+function getBenchCoords() { return benchMarker ? benchMarker.getLatLng() : null; }
+
+function updateBenchCircle() {
+    if (!benchMarker) return;
+    const radius = parseFloat(document.getElementById('bench-radius').value) || 1000;
+    if (benchCircle) map.removeLayer(benchCircle);
+    benchCircle = L.circle(benchMarker.getLatLng(), {
+        radius:      radius,
+        color:       '#eab308',
+        weight:      2,
+        fillColor:   '#eab308',
+        fillOpacity: 0.1,
+    }).addTo(map);
+}
+
+function clearBench() {
+    if (benchMarker) { map.removeLayer(benchMarker); benchMarker = null; }
+    if (benchCircle) { map.removeLayer(benchCircle); benchCircle = null; }
+}
+
+
 // Klicken auf Karte
 map.on('click', function(e) {
     if (placingMode === 'start') {
@@ -102,6 +137,9 @@ map.on('click', function(e) {
         setPlacingMode(null);
     } else if (placingMode === 'end') {
         setEndMarker(e.latlng);
+        setPlacingMode(null);
+    } else if (placingMode === 'bench') {
+        setBenchMarker(e.latlng);
         setPlacingMode(null);
     }
 });
@@ -114,6 +152,14 @@ document.getElementById('btn-place-start').addEventListener('click', () => {
 document.getElementById('btn-place-end').addEventListener('click', () => {
     setPlacingMode(placingMode === 'end' ? null : 'end');
 });
+
+// Benchmark-Punkt setzen + Radius live aktualisieren
+const benchPlaceBtn = document.getElementById('btn-place-bench');
+if (benchPlaceBtn) benchPlaceBtn.addEventListener('click', () => {
+    setPlacingMode(placingMode === 'bench' ? null : 'bench');
+});
+const benchRadiusInput = document.getElementById('bench-radius');
+if (benchRadiusInput) benchRadiusInput.addEventListener('input', updateBenchCircle);
 
 // Escape bricht ab
 document.addEventListener('keydown', e => {

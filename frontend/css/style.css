@@ -266,6 +266,34 @@ button.secondary:hover { background: #e5e7eb; }
     min-height: 16px;
 }
 
+.bench-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.bench-table th {
+    text-align: right;
+    padding: 4px 6px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+.bench-table th:first-child { text-align: left; }
+
+.bench-table td {
+    padding: 4px 6px;
+    text-align: right;
+    border-bottom: 1px solid #f3f4f6;
+    font-variant-numeric: tabular-nums;
+}
+
+.bench-table td:first-child { text-align: left; font-weight: 500; }
+
+.bench-table tr.bench-fastest td { color: #16a34a; }
+
 
 
 @media (max-width: 480px) {

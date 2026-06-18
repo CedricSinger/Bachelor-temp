@@ -16,15 +16,13 @@ namespace routenplaner {
     std::vector<const POI*> POICollection::query_bbox(
         double lat_min, double lng_min,
         double lat_max, double lng_max,
-        const std::string& category,
-        const std::string& type) const
+        const TagFilter& filter) const
     {
         std::vector<const POI*> result;
         for (const auto& poi : pois_) {
             if (poi.coords.lat < lat_min || poi.coords.lat > lat_max) continue;
             if (poi.coords.lng < lng_min || poi.coords.lng > lng_max) continue;
-            if (!category.empty() && poi.category != category) continue;
-            if (!type.empty() && poi.type != type) continue;
+            if (!poi_matches(poi, filter)) continue;
             result.push_back(&poi);
         }
         return result;
@@ -32,8 +30,7 @@ namespace routenplaner {
 
     std::vector<const POI*> POICollection::nearest(
         double lat, double lng,
-        const std::string& category,
-        const std::string& type,
+        const TagFilter& filter,
         size_t max_results) const
     {
         LatLng target{lat, lng};
@@ -42,8 +39,7 @@ namespace routenplaner {
         candidates.reserve(pois_.size());
 
         for (const auto& poi : pois_) {
-            if (!category.empty() && poi.category != category) continue;
-            if (!type.empty() && poi.type != type) continue;
+            if (!poi_matches(poi, filter)) continue;
             candidates.push_back({target.distance_to(poi.coords), &poi});
         }
 
@@ -55,6 +51,17 @@ namespace routenplaner {
         result.reserve(n);
         for (const auto& [dist, poi] : candidates) {
             result.push_back(poi);
+        }
+        return result;
+    }
+
+    std::map<std::string, size_t> POICollection::key_stats() const {
+        std::map<std::string, size_t> result;
+        for (const auto& poi : pois_) {
+            for (const auto& [k, v] : poi.tags) {
+                (void)v;
+                result[dict_.str(k)]++;
+            }
         }
         return result;
     }
