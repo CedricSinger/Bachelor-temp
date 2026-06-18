@@ -2,7 +2,9 @@
 # je Zone unterschiedlicher POI-Dichte.
 #
 # 1) baut/startet bench_pois auf Deutschland          -> bench_local.json
-# 2) misst OSCAR apxstats (amenity=restaurant) je Zone, gemittelt
+# 2) misst OSCAR items/all (amenity=restaurant) je Zone, gemittelt
+#    -> echte Item-Abfrage (POIs mit Koordinaten+Tags), nicht nur eine Zaehlung;
+#       das ist der Workload, den die App spaeter tatsaechlich braucht.
 # 3) erzeugt einen eigenstaendigen HTML-Report        -> comparison_report.html
 #
 # Aufruf:
@@ -16,7 +18,7 @@ param(
         @{ Name = 'Essen';     Lat = 51.4556; Lng = 7.0116 },   # dicht (Ruhrgebiet)
         @{ Name = 'Wuerzburg'; Lat = 49.7913; Lng = 9.9534 }    # duenn (Franken)
     ),
-    [int]$OscarRuns = 5,
+    [int]$OscarRuns = 3,
     # Nur falls cmake nicht im PATH ist (Windows/MSYS2). Auf Linux/macOS ignoriert.
     [string]$MingwBin = "C:\msys64\mingw64\bin"
 )
@@ -32,7 +34,9 @@ $Exe       = Join-Path $Root "build/backend/$ExeName"
 $Report    = Join-Path $Root "comparison_report.html"
 $ua        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
 $hdr       = @{ "User-Agent" = $ua; "Referer" = "https://www.oscar-web.de/" }
-$OscarBase = "https://routing.oscar-web.de/oscar/cqr/clustered/apxstats"
+# items/all: liefert die tatsaechlichen POIs (id, Koordinaten, Tags) als JSON-Array,
+# nicht nur eine approximierte Zaehlung wie apxstats. Das entspricht dem App-Workload.
+$OscarBase = "https://routing.oscar-web.de/oscar/items/all"
 $Radii     = @(10000, 50000)   # gemessene Radien (muss zu bench_pois passen)
 
 # --- 1) Lokaler Lauf ---------------------------------------------------------
@@ -52,20 +56,22 @@ $local = Get-Content $LocalJson -Raw | ConvertFrom-Json
 # --- 2) OSCAR-Messung je Zone ------------------------------------------------
 Write-Host "[2/3] Messe OSCAR (remote) ..." -ForegroundColor Cyan
 function Measure-Oscar($lat, $lng, $radius, $runs) {
-    $q = "@amenity:restaurant `$point:$radius," + ([double]$lat).ToString($IC) + "," + ([double]$lng).ToString($IC)
-    $u = "$OscarBase`?q=" + [uri]::EscapeDataString($q)
-    $times = @(); $items = 0
+    $q = "@amenity:restaurant " + [char]36 + "point:" + $radius + "," + ([double]$lat).ToString($IC) + "," + ([double]$lng).ToString($IC)
+    $u = $OscarBase + "?q=" + [uri]::EscapeDataString($q)
+    $times = @(); $items = 0; $bytes = 0
     for ($i = 0; $i -lt $runs; $i++) {
         try {
-            $t = Measure-Command { $r = Invoke-WebRequest $u -UseBasicParsing -Headers $hdr -TimeoutSec 60 }
+            $t = Measure-Command { $script:resp = Invoke-WebRequest $u -UseBasicParsing -Headers $hdr -TimeoutSec 180 }
             $times += $t.TotalMilliseconds
-            $items = ($r.Content | ConvertFrom-Json).items
+            $arr   = $script:resp.Content | ConvertFrom-Json   # items/all -> JSON-Array echter POIs
+            $items = $arr.Count
+            $bytes = $script:resp.Content.Length
         } catch { Write-Host "  OSCAR-Fehler: $($_.Exception.Message)" -ForegroundColor Yellow }
         Start-Sleep -Milliseconds 800
     }
     if ($times.Count -eq 0) { return $null }
     $m = $times | Measure-Object -Average -Minimum -Maximum
-    [PSCustomObject]@{ avg_ms = [math]::Round($m.Average,1); min_ms = [math]::Round($m.Minimum,1); max_ms = [math]::Round($m.Maximum,1); items = $items }
+    [PSCustomObject]@{ avg_ms = [math]::Round($m.Average,1); min_ms = [math]::Round($m.Minimum,1); max_ms = [math]::Round($m.Maximum,1); items = $items; bytes = $bytes }
 }
 $oscar = @{}   # Schluessel: "ZonenName|radius_m"
 foreach ($z in $local.zones) {
@@ -91,7 +97,7 @@ foreach ($z in $local.zones) {
         $rows += "<tr class='grp'><td colspan='6'>$($case.name)</td></tr>"
         $rows += Row "lokal" "Grid"   $g.avg_ms $g.min_ms $g.max_ms $g.found ($g.avg_ms -eq $fast)
         $rows += Row "lokal" "R-Tree" $r.avg_ms $r.min_ms $r.max_ms $r.found ($r.avg_ms -eq $fast)
-        if ($oz) { $rows += Row "remote" "OSCAR (Netzwerk)" $oz.avg_ms $oz.min_ms $oz.max_ms $oz.items ($oz.avg_ms -eq $fast) }
+        if ($oz) { $rows += Row "remote" "OSCAR items/all (Netzwerk)" $oz.avg_ms $oz.min_ms $oz.max_ms $oz.items ($oz.avg_ms -eq $fast) }
     }
     # Dichte-Kontext: 50-km-Box dieser Zone
     $bbox50 = $z.cases | Where-Object { $_.type -eq "" -and [int]$_.radius_m -eq 50000 }
@@ -135,9 +141,11 @@ Radien 10 und 50 km, $($local.n_queries) Abfragen je Fall. Erzeugt $gen.</p>
 $sections
 <p class="note">
 Lokal: Mittel aus $($local.n_queries) Abfragen je Fall, Bounding-Box, In-Memory im selben Prozess.
-OSCAR: Mittel aus $OscarRuns Abfragen, Endpoint <code>apxstats</code> auf <code>routing.oscar-web.de</code>,
-echter Kreisradius (<code>`$point</code>), inklusive Netzwerk-Roundtrip.
-Trefferzahlen nicht direkt vergleichbar (lokal Bounding-Box, OSCAR Kreis und naeherungsweise); massgeblich ist die Latenz.
+OSCAR: Mittel aus $OscarRuns Abfragen, Endpoint <code>items/all</code> auf <code>routing.oscar-web.de</code>,
+echter Kreisradius (<code>`$point</code>), inklusive Netzwerk-Roundtrip und vollstaendiger
+Item-Uebertragung (POIs mit Koordinaten und Tags) &mdash; der Workload, den die App real braucht.
+Trefferzahlen nicht direkt vergleichbar: lokal Bounding-Box auf aktuellem germany-latest, OSCAR Kreis
+auf aelterem OSM-Extrakt (in dicht gemappten Regionen daher deutlich weniger Treffer). Massgeblich ist die Latenz.
 </p>
 </body></html>
 "@
