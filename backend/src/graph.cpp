@@ -50,17 +50,96 @@ namespace routenplaner {
         edge_count_ += 2;
     }
 
+    int Graph::node_row_(double lat) const {
+        int r = static_cast<int>((lat - n_lat_min_) / (n_lat_max_ - n_lat_min_) * n_cells_);
+        return std::max(0, std::min(n_cells_ - 1, r));
+    }
+
+    int Graph::node_col_(double lng) const {
+        int c = static_cast<int>((lng - n_lng_min_) / (n_lng_max_ - n_lng_min_) * n_cells_);
+        return std::max(0, std::min(n_cells_ - 1, c));
+    }
+
+    void Graph::build_node_index() {
+        if (nodes_.empty()) return;
+
+        n_lat_min_ = n_lat_max_ = nodes_.begin()->second.lat;
+        n_lng_min_ = n_lng_max_ = nodes_.begin()->second.lng;
+        for (const auto& [id, c] : nodes_) {
+            (void)id;
+            n_lat_min_ = std::min(n_lat_min_, c.lat);
+            n_lat_max_ = std::max(n_lat_max_, c.lat);
+            n_lng_min_ = std::min(n_lng_min_, c.lng);
+            n_lng_max_ = std::max(n_lng_max_, c.lng);
+        }
+        n_lat_max_ += 1e-9;
+        n_lng_max_ += 1e-9;
+
+        // Ziel ~4 Knoten pro Zelle
+        n_cells_ = static_cast<int>(std::sqrt(static_cast<double>(nodes_.size()) / 4.0));
+        n_cells_ = std::max(50, std::min(2000, n_cells_));
+
+        node_grid_.assign(static_cast<size_t>(n_cells_) * n_cells_, {});
+        for (const auto& [id, c] : nodes_) {
+            node_grid_[static_cast<size_t>(node_row_(c.lat)) * n_cells_ + node_col_(c.lng)]
+                .push_back(id);
+        }
+        node_index_built_ = true;
+    }
+
     uint64_t Graph::nearest_node(double lat, double lng) const {
         LatLng target{lat, lng};
-        uint64_t best_id = 0;
-        double best_dist = std::numeric_limits<double>::max();
 
-        for (const auto& [id, coords] : nodes_) {
-            double d = target.distance_to(coords);
-            if (d < best_dist) {
-                best_dist = d;
-                best_id = id;
+        // Linearer Fallback, falls kein Index aufgebaut wurde.
+        if (!node_index_built_) {
+            uint64_t best_id = 0;
+            double best_dist = std::numeric_limits<double>::max();
+            for (const auto& [id, coords] : nodes_) {
+                double d = target.distance_to(coords);
+                if (d < best_dist) { best_dist = d; best_id = id; }
             }
+            return best_id;
+        }
+
+        // Gitter: von der Zelle des Punkts aus ringweise nach aussen suchen.
+        int r0 = node_row_(lat), c0 = node_col_(lng);
+        uint64_t best_id = 0;
+        double best_d2 = std::numeric_limits<double>::max();   // quadrat. Distanz in m^2
+
+        // Planare Naeherung (equirectangular) um den Anfragepunkt: kein Trig im
+        // inneren Loop. Liefert bei kurzen Distanzen denselben naechsten Knoten
+        // wie Haversine.
+        const double m_per_deg_lat = 111000.0;
+        const double m_per_deg_lng = 111000.0 * std::cos(lat * M_PI / 180.0);
+
+        // Kleinste Zellenkante in Metern (konservativ fuer das Abbruchkriterium).
+        double cell_lat_m = (n_lat_max_ - n_lat_min_) / n_cells_ * m_per_deg_lat;
+        double cell_lng_m = (n_lng_max_ - n_lng_min_) / n_cells_ * std::abs(m_per_deg_lng);
+        double cell_m = std::max(1.0, std::min(cell_lat_m, cell_lng_m));
+
+        for (int ring = 0; ring <= n_cells_; ++ring) {
+            int r_lo = std::max(0, r0 - ring), r_hi = std::min(n_cells_ - 1, r0 + ring);
+            int c_lo = std::max(0, c0 - ring), c_hi = std::min(n_cells_ - 1, c0 + ring);
+
+            for (int r = r_lo; r <= r_hi; ++r) {
+                for (int c = c_lo; c <= c_hi; ++c) {
+                    // nur den Rand des aktuellen Rings betrachten
+                    if (ring > 0 && r > r_lo && r < r_hi && c > c_lo && c < c_hi) continue;
+                    for (uint64_t id : node_grid_[static_cast<size_t>(r) * n_cells_ + c]) {
+                        const LatLng& nc = nodes_.at(id);
+                        double dx = (nc.lng - lng) * m_per_deg_lng;
+                        double dy = (nc.lat - lat) * m_per_deg_lat;
+                        double d2 = dx * dx + dy * dy;
+                        if (d2 < best_d2) { best_d2 = d2; best_id = id; }
+                    }
+                }
+            }
+
+            // Abbruch: kein Knoten weiter aussen kann naeher sein als best (Quadrate).
+            double ring_m = static_cast<double>(ring) * cell_m;
+            if (best_id != 0 && ring_m * ring_m > best_d2) break;
+            // gesamtes Gitter abgedeckt
+            if (r_lo == 0 && c_lo == 0 && r_hi == n_cells_ - 1 && c_hi == n_cells_ - 1) break;
         }
         return best_id;
     }

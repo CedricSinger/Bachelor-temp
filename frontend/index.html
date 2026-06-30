@@ -40,6 +40,35 @@
 
             <div class="divider"></div>
 
+            <!-- Sequenzierte Route (iterative Verdopplung) -->
+            <div class="section-title">Sequenzierte Route</div>
+            <div id="seq-list"></div>
+            <datalist id="seq-presets"></datalist>
+            <div class="actions">
+                <button id="btn-seq-add" class="secondary">+ Kategorie</button>
+            </div>
+            <div class="field-row">
+                <label>D start</label>
+                <div class="input-unit">
+                    <input type="number" id="seq-dstart" value="2000" min="100" step="100" />
+                    <span class="unit">m</span>
+                </div>
+            </div>
+            <div class="field-row">
+                <label>Faktor</label>
+                <input type="number" id="seq-dfactor" value="2" min="1.1" step="0.1" />
+            </div>
+            <div class="actions">
+                <button id="btn-sequenced">Sequenz-Route</button>
+                <button id="btn-clear-sequenced" class="secondary">Entfernen</button>
+            </div>
+            <div class="actions">
+                <button id="btn-sequenced-explore" class="secondary">Dijkstra-Segmente anzeigen</button>
+            </div>
+            <div id="seq-status" class="poi-status"></div>
+
+            <div class="divider"></div>
+
             <!-- POI-Suche -->
             <div class="section-title">POIs anzeigen</div>
 
@@ -110,6 +139,7 @@
 
         <script src="/js/map.js"></script>
         <script src="/js/routing.js"></script>
+        <script src="/js/sequenced.js"></script>
         <script src="/js/pois.js"></script>
         <script src="/js/benchmark.js"></script>
     </body>

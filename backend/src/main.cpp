@@ -50,7 +50,15 @@ int main(int argc, char* argv[]) {
         auto load_ms = std::chrono::duration<double, std::milli>(
             std::chrono::high_resolution_clock::now() - load_start).count();
         std::cout << "Dataset loaded in " << (load_ms / 1000.0) << " s" << std::endl;
-        
+
+        // Knoten-Index aufbauen und POIs auf Graphknoten snappen (fuer Routing).
+        auto snap_start = std::chrono::high_resolution_clock::now();
+        graph.build_node_index();
+        pois.snap_to_graph(graph);
+        auto snap_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - snap_start).count();
+        std::cout << "Node index built + POIs snapped in " << (snap_ms / 1000.0) << " s" << std::endl;
+
         // Stats auslesen: Anzahl POIs je Tag-Key
         auto key_stats = pois.key_stats();
         std::ofstream stats_file("poi_stats.txt");

@@ -184,12 +184,78 @@ button.secondary {
 
 button.secondary:hover { background: #e5e7eb; }
 
+button.secondary.active {
+    background: #2563eb;
+    color: white;
+}
+button.secondary.active:hover { background: #1d4ed8; }
+
 
 
 .divider {
     height: 1px;
     background: #f3f4f6;
     margin: 14px 0;
+}
+
+
+
+/* Sequenzierte Route: Kategorienliste */
+.seq-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.seq-index {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #2563eb;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.seq-row input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    font-size: 13px;
+    color: #111827;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.seq-row input:focus { border-color: #2563eb; }
+
+.seq-row .btn-icon { width: 30px; }
+
+.btn-icon.btn-remove { color: #ef4444; }
+.btn-icon.btn-remove:hover { border-color: #ef4444; color: #ef4444; }
+
+
+/* POI-Detailansicht (Popup) */
+.poi-popup-type {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #2563eb;
+    margin-bottom: 2px;
+}
+
+.poi-popup-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
 }
 
 

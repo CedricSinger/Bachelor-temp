@@ -170,6 +170,197 @@ namespace routenplaner {
 
 
 
+        // Sequenced Route API (iterative Verdopplung)
+        if (target.rfind("/sequenced?", 0) == 0 || target == "/sequenced") {
+            auto qpos = target.find('?');
+            if (qpos == std::string::npos) {
+                return make_response(http::status::bad_request,
+                    R"({"error":"Missing parameters"})");
+            }
+            auto params = parse_query(target.substr(qpos + 1));
+
+            if (!params.count("from") || !params.count("to") || !params.count("seq")) {
+                return make_response(http::status::bad_request,
+                    R"({"error":"Missing from, to or seq"})");
+            }
+
+            try {
+                auto parse_coord = [](const std::string& s) -> std::pair<double, double> {
+                    auto comma = s.find(',');
+                    if (comma == std::string::npos) throw std::invalid_argument("no comma");
+                    return {std::stod(s.substr(0, comma)), std::stod(s.substr(comma + 1))};
+                };
+                auto [from_lat, from_lng] = parse_coord(params["from"]);
+                auto [to_lat, to_lng]     = parse_coord(params["to"]);
+
+                double d_start  = params.count("d_start")  ? std::stod(params["d_start"])  : 2000.0;
+                double d_factor = params.count("d_factor") ? std::stod(params["d_factor"]) : 2.0;
+                bool   explore  = params.count("explore") && params["explore"] == "1";
+
+                // seq = "key=value;key=value;..." -> Kategorien (Tag-Filter) in Reihenfolge
+                std::vector<Category> seq;
+                const std::string& s = params["seq"];
+                size_t start = 0;
+                bool unknown = false;
+                while (start <= s.size()) {
+                    size_t semi = s.find(';', start);
+                    std::string item = (semi == std::string::npos)
+                        ? s.substr(start) : s.substr(start, semi - start);
+                    if (!item.empty()) {
+                        auto eq = item.find('=');
+                        if (eq == std::string::npos) {
+                            unknown = true;
+                        } else {
+                            uint32_t kid = pois.dict().id_of(item.substr(0, eq));
+                            uint32_t vid = pois.dict().id_of(item.substr(eq + 1));
+                            if (kid == TagDict::INVALID || vid == TagDict::INVALID) {
+                                unknown = true;
+                            } else {
+                                Category c;
+                                c.push_back({kid, vid});
+                                seq.push_back(std::move(c));
+                            }
+                        }
+                    }
+                    if (semi == std::string::npos) break;
+                    start = semi + 1;
+                }
+
+                if (unknown || seq.empty()) {
+                    return make_response(http::status::ok,
+                        R"({"success":false,"error":"Unknown or empty category in seq"})");
+                }
+
+                std::cout << "[API] Sequenced request: " << from_lat << "," << from_lng
+                          << " -> " << to_lat << "," << to_lng
+                          << " seq=" << s << " d_start=" << d_start
+                          << " d_factor=" << d_factor << std::endl;
+
+                auto res = router.sequenced_route(from_lat, from_lng, to_lat, to_lng,
+                                                  seq, grid_idx_, d_start, d_factor, explore);
+
+                std::cout << "[API] Sequenced "
+                          << (res.found ? "found" : "not found")
+                          << " in " << res.query_time_ms << " ms, "
+                          << res.rounds_used << " rounds" << std::endl;
+
+                const TagDict& dict = pois.dict();
+                json response;
+                response["success"]       = res.found;
+                response["rounds_used"]   = res.rounds_used;
+                response["query_time_ms"] = res.query_time_ms;
+
+                json rounds = json::array();
+                for (const auto& r : res.rounds) {
+                    rounds.push_back({
+                        {"cap", r.cap},
+                        {"radius_m", r.bbox_radius_m},
+                        {"reached", r.reached_target},
+                        {"total", r.total_time},
+                        {"time_ms", r.time_ms},
+                        {"settled", r.settled}
+                    });
+                }
+                response["rounds"] = std::move(rounds);
+
+                if (res.found) {
+                    response["total_distance_m"]  = res.total_time;
+                    response["total_distance_km"] = std::round(res.total_time / 10.0) / 100.0;
+
+                    // Segmente als FeatureCollection (ein LineString je Abschnitt)
+                    json fc;
+                    fc["type"]     = "FeatureCollection";
+                    fc["features"] = json::array();
+                    for (size_t i = 0; i < res.segments.size(); ++i) {
+                        const auto& seg = res.segments[i];
+                        json coords = json::array();
+                        for (const auto& pt : seg.geometry)
+                            coords.push_back({pt.lng, pt.lat});
+
+                        json props;
+                        props["leg"]    = i;
+                        props["weight"] = seg.weight;
+                        if (seg.facility) {
+                            json tags = json::object();
+                            for (const auto& [k, v] : seg.facility->tags)
+                                tags[dict.str(k)] = dict.str(v);
+                            props["facility_id"]   = seg.facility->id;
+                            props["facility_tags"] = std::move(tags);
+                        }
+
+                        json feat;
+                        feat["type"]                 = "Feature";
+                        feat["geometry"]["type"]     = "LineString";
+                        feat["geometry"]["coordinates"] = std::move(coords);
+                        feat["properties"]           = std::move(props);
+                        fc["features"].push_back(std::move(feat));
+                    }
+                    response["route"] = std::move(fc);
+
+                    // Gewaehlte Facilities (fuer Marker)
+                    json chosen = json::array();
+                    for (const POI* p : res.chosen) {
+                        if (!p) continue;
+                        json tags = json::object();
+                        for (const auto& [k, v] : p->tags)
+                            tags[dict.str(k)] = dict.str(v);
+                        chosen.push_back({
+                            {"id", p->id},
+                            {"coordinates", {p->coords.lng, p->coords.lat}},
+                            {"tags", std::move(tags)}
+                        });
+                    }
+                    response["chosen"] = std::move(chosen);
+
+                    // Optionale Suchbaeume je gewaehltem POI (MultiLineString)
+                    if (!res.exploration.empty()) {
+                        uint32_t name_key = dict.id_of("name");
+                        json expl = json::array();
+                        for (size_t j = 0; j < res.exploration.size(); ++j) {
+                            json mls = json::array();
+                            for (const auto& edge : res.exploration[j].edges) {
+                                json line = json::array();
+                                for (const auto& pt : edge)
+                                    line.push_back({pt.lng, pt.lat});
+                                mls.push_back(std::move(line));
+                            }
+
+                            // Mitbewerber-Facilities derselben Kategorie
+                            json cands = json::array();
+                            for (const POI* p : res.exploration[j].candidates) {
+                                std::string nm;
+                                if (name_key != TagDict::INVALID)
+                                    for (const auto& [k, v] : p->tags)
+                                        if (k == name_key) { nm = dict.str(v); break; }
+                                cands.push_back({
+                                    {"coordinates", {p->coords.lng, p->coords.lat}},
+                                    {"name", nm}
+                                });
+                            }
+
+                            json feat;
+                            feat["type"]                     = "Feature";
+                            feat["geometry"]["type"]         = "MultiLineString";
+                            feat["geometry"]["coordinates"]  = std::move(mls);
+                            feat["properties"]["poi_index"]  = j;
+                            feat["properties"]["candidates"] = std::move(cands);
+                            expl.push_back(std::move(feat));
+                        }
+                        response["exploration"] = std::move(expl);
+                    }
+                } else {
+                    response["error"] = "No route found";
+                }
+
+                return make_response(http::status::ok, response.dump());
+
+            } catch (const std::exception& e) {
+                json err;
+                err["error"] = std::string("Invalid parameters: ") + e.what();
+                return make_response(http::status::bad_request, err.dump());
+            }
+        }
+
         // POI API
         if (target.rfind("/pois", 0) == 0) {
             auto qpos = target.find('?');

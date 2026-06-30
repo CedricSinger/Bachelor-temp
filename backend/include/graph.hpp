@@ -37,6 +37,10 @@ class POICollection;
         // Nächsten Knoten zu Koordinate finden
         uint64_t nearest_node(double lat, double lng) const;
 
+        // Gitter-Index ueber alle Knoten aufbauen (beschleunigt nearest_node
+        // von O(n) auf nahezu O(1)). Einmalig nach dem Laden aufrufen.
+        void build_node_index();
+
 
         const std::vector<Edge>& neighbors(uint64_t node_id) const;
         const LatLng& node_coords(uint64_t node_id) const;
@@ -54,6 +58,14 @@ class POICollection;
         size_t edge_count_ = 0;
 
         static const std::vector<Edge> empty_edges_;
+
+        // Gitter-Index ueber Knoten (fuer nearest_node).
+        bool   node_index_built_ = false;
+        double n_lat_min_ = 0.0, n_lat_max_ = 0.0, n_lng_min_ = 0.0, n_lng_max_ = 0.0;
+        int    n_cells_ = 0;
+        std::vector<std::vector<uint64_t>> node_grid_;
+        int    node_row_(double lat) const;
+        int    node_col_(double lng) const;
     };
 
 }
